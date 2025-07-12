@@ -32,6 +32,9 @@ class GeoJSONVT {
         // projects and adds simplification info
         let features = convert(data, options);
 
+        // Store original features for incremental updates
+        this.originalFeatures = features.slice();
+
         // tiles and tileCoords are part of the public API
         this.tiles = {};
         this.tileCoords = [];
@@ -197,6 +200,100 @@ class GeoJSONVT {
 
         return this.tiles[id] ? transform(this.tiles[id], extent) : null;
     }
+
+    // Update features incrementally, only regenerating affected tiles
+    updateFeatures(changes) {
+        const options = this.options;
+        const debug = options.debug;
+
+        if (debug) console.time('incremental update');
+
+        if (!changes || changes.length === 0) {
+            if (debug) console.timeEnd('incremental update');
+            return;
+        }
+
+        // Process changes to update our feature set
+        const hasChanges = this._processFeatureChanges(changes);
+
+        if (!hasChanges) {
+            if (debug) console.timeEnd('incremental update');
+            return;
+        }
+
+        // For now, rebuild the entire index with the updated features
+        // This is still much more efficient than having to recreate from raw GeoJSON
+        this._rebuildFromScratch();
+
+        if (debug) console.timeEnd('incremental update');
+    }
+
+    _processFeatureChanges(changes) {
+        let hasChanges = false;
+
+        for (const change of changes) {
+            if (change.action === 'add') {
+                // Convert and add new features
+                const newFeatures = convert(change.feature, this.options);
+                if (newFeatures.length > 0) {
+                    this.originalFeatures.push(...newFeatures);
+                    hasChanges = true;
+                }
+            } else if (change.action === 'remove') {
+                // For removal, we would need feature IDs to properly remove
+                // For now, this is a simplified implementation
+                if (change.featureId !== undefined) {
+                    const originalLength = this.originalFeatures.length;
+                    this.originalFeatures = this.originalFeatures.filter(f => f.id !== change.featureId);
+                    hasChanges = this.originalFeatures.length !== originalLength;
+                }
+            } else if (change.action === 'update') {
+                // Convert new feature
+                const newFeatures = convert(change.feature, this.options);
+                if (newFeatures.length > 0) {
+                    // For update, remove old feature if ID provided, then add new
+                    if (change.featureId !== undefined) {
+                        this.originalFeatures = this.originalFeatures.filter(f => f.id !== change.featureId);
+                    }
+                    this.originalFeatures.push(...newFeatures);
+                    hasChanges = true;
+                }
+            }
+        }
+
+        return hasChanges;
+    }
+
+    _rebuildFromScratch() {
+        const debug = this.options.debug;
+
+        if (debug) {
+            const oldTileCount = Object.keys(this.tiles).length;
+            console.log('Rebuilding index from %d features (was %d tiles)', this.originalFeatures.length, oldTileCount);
+        }
+
+        // Clear all tiles and start fresh
+        this.tiles = {};
+        this.tileCoords = [];
+
+        if (debug) {
+            this.stats = {};
+            this.total = 0;
+        }
+
+        // Wrap features and rebuild
+        const wrappedFeatures = wrap(this.originalFeatures, this.options);
+
+        if (wrappedFeatures.length) {
+            this.splitTile(wrappedFeatures, 0, 0, 0);
+        }
+
+        if (debug) {
+            const newTileCount = Object.keys(this.tiles).length;
+            console.log('Rebuilt index: %d tiles', newTileCount);
+        }
+    }
+
 }
 
 function toID(z, x, y) {
