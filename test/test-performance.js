@@ -59,7 +59,7 @@ test('performance: incremental update vs recreation', () => {
     // Verify correctness - the updated index should have more features than the original
     console.log(`Original features: ${originalTile.features.length}`);
     console.log(`Updated features: ${updatedTile.features.length}`);
-    
+
     assert(originalTile.features.length > 0, 'Original tile should have features');
     assert(updatedTile.features.length > originalTile.features.length, 'Updated tile should have more features');
 
@@ -138,6 +138,6 @@ test('performance: multiple small updates vs single large update', () => {
     console.log(`Batch update: ${batchTime.toFixed(2)}ms`);
 
     // Batch updates should generally be more efficient
-    assert(batchTime <= multipleTime * 1.2, 
+    assert(batchTime <= multipleTime * 1.2,
         'Batch updates should be competitive with multiple small updates');
 });
